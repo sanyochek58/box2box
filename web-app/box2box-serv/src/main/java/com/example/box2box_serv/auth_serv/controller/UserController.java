@@ -35,7 +35,7 @@ public class UserController {
     @GetMapping("/me")
     public ResponseEntity<InfoDTO> getMe(@RequestHeader("Authorization") String header) throws Exception {
         if(header == null || !header.startsWith("Bearer ")){
-            throw new Exception("Отстутствует токен авторизации");
+            throw new Exception("Отстутствует токен авторизации !");
         }
 
         String token = header.substring(7);

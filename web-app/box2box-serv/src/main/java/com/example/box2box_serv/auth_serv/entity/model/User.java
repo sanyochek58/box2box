@@ -16,13 +16,13 @@ public class User {
     @Id
     private UUID uuid;
 
-    @NotNull
+    @Column(nullable = false)
     private String username;
 
-    @NotNull
+    @Column(nullable = false)
     private String email;
 
-    @NotNull
+    @Column(nullable = false)
     private String password;
 
 }

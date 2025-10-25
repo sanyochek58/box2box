@@ -5,6 +5,7 @@ import com.example.box2box_serv.auth_serv.entity.dto.AuthResponseDTO;
 import com.example.box2box_serv.auth_serv.entity.dto.LoginDTO;
 import com.example.box2box_serv.auth_serv.entity.dto.RegistrationDTO;
 import com.example.box2box_serv.auth_serv.entity.model.User;
+import com.example.box2box_serv.auth_serv.events.UserRegisteredEvent;
 import com.example.box2box_serv.auth_serv.exception.AlreadyUserExistsException;
 import com.example.box2box_serv.auth_serv.exception.InvalidCredentialsException;
 import com.example.box2box_serv.auth_serv.exception.UserNotFoundException;
@@ -42,7 +43,8 @@ public class AuthServiceImpl implements AuthService {
         user.setPassword(encoder.encode(dto.password()));
         repository.save(user);
 
-        kafka.send(USER_REGISTRATION_TOPIC, "Пользователь " + dto.email() + " успешно зарегистрирован!");
+        UserRegisteredEvent event = new UserRegisteredEvent(user.getUuid(), user.getEmail(), user.getUsername());
+        kafka.send(USER_REGISTRATION_TOPIC, event);
         log.info("Пользователь успешно зарегистрирован: {}", dto.email());
     }
 
