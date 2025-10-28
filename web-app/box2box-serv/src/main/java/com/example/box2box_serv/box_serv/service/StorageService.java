@@ -13,5 +13,5 @@ public interface StorageService {
     void WelcomeCreateStorage(UserRegisteredEvent event) throws UserNotFoundException;
     List<CreateStorageDTO> getAllUserStorages(UUID uuid) throws NotFoundUserStoragesException, UserNotFoundException;
     CreateStorageDTO findStorageByName(UUID user_id, String name) throws NotFoundStorageException, UserNotFoundException;
-
+    CreateStorageDTO createStorage(UUID userID, String storageName);
 }

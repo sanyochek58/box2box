@@ -56,6 +56,26 @@ services:
     networks:
       - box2box-net
 
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./volumes/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - box2box-net
+
   box2box-serv:
     build:
       context: .
@@ -64,12 +84,18 @@ services:
     depends_on:
       - postgres
       - kafka
+      - minio
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/box2box_db
       SPRING_DATASOURCE_USERNAME: box2box_user
       SPRING_DATASOURCE_PASSWORD: box2box_pass
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio12345
+      MINIO_BUCKET: box2box-bucket
     ports:
       - "8080:8080"
     networks:

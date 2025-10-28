@@ -8,10 +8,7 @@ import com.example.box2box_serv.box_serv.service.StorageServiceImpl;
 import com.example.box2box_serv.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -51,5 +48,20 @@ public class StorageController {
 
         CreateStorageDTO storage = service.findStorageByName(user.getUuid(), name);
         return ResponseEntity.ok(storage);
+    }
+
+    @PostMapping("/create")
+    public ResponseEntity<CreateStorageDTO> createStorage(@RequestHeader("Authorization") String header,
+                                                @RequestParam("name") String name)throws Exception{
+        if(header == null || !header.startsWith("Bearer ")){
+            throw new Exception("Отсутствует токен авторизации !");
+        }
+        String email = jwtService.extractEmail(header.substring(7));
+        User user = repository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь не найден !"));
+
+        CreateStorageDTO dto = service.createStorage(user.getUuid(), name);
+        return ResponseEntity.ok(dto);
+
     }
 }

@@ -10,11 +10,13 @@ import com.example.box2box_serv.box_serv.events.CreatedStorageEvent;
 import com.example.box2box_serv.box_serv.exception.NotFoundStorageException;
 import com.example.box2box_serv.box_serv.exception.NotFoundUserStoragesException;
 import com.example.box2box_serv.box_serv.repository.StorageRepository;
+import io.minio.BucketExistsArgs;
+import io.minio.MinioClient;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.sql.ast.tree.expression.Over;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -26,30 +28,64 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class StorageServiceImpl implements StorageService{
+
     private final StorageRepository storageRepository;
     private final UserRepository userRepository;
     private final KafkaTemplate<String, Object> kafka;
+    private final MinioClient minioClient;
+
     private final Logger log = LoggerFactory.getLogger(StorageServiceImpl.class);
     private static final String CREATED_STORAGE_TOPIC = "created-storage";
+
+    @Value("${minio.bucket}")
+    private String bucketName;
 
     @Override
     @Transactional
     @KafkaListener(topics = "user-registration", groupId = "box2box-group")
-    public void WelcomeCreateStorage(UserRegisteredEvent event) throws UserNotFoundException{
+    public void WelcomeCreateStorage(UserRegisteredEvent event) throws UserNotFoundException {
         UUID user_id = event.user_id();
-        String email = event.email();
         String username = event.username();
 
-        User user = userRepository.findById(user_id).orElseThrow(() -> new UserNotFoundException("Пользователь не найден !"));
+        User user = userRepository.findById(user_id)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь не найден !"));
 
         Storage storage = new Storage();
         storage.setName("welcome-storage by " + username);
         storage.setUser(user);
         storageRepository.save(storage);
 
+        log.info("Создано хранилище {} для пользователя {}", storage.getName(), username);
+
+        try {
+            boolean bucketExists = minioClient.bucketExists(
+                    BucketExistsArgs.builder().bucket(bucketName).build()
+            );
+
+            if (!bucketExists) {
+                minioClient.makeBucket(
+                        io.minio.MakeBucketArgs.builder().bucket(bucketName).build()
+                );
+                log.info("Создан MinIO bucket '{}'", bucketName);
+            }
+
+            String prefixKey = user.getUuid() + "-" + user.getUsername() + "/" + storage.getUuid() + " " + storage.getName() + "/.keep";
+            minioClient.putObject(
+                    io.minio.PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(prefixKey)
+                            .stream(new java.io.ByteArrayInputStream(new byte[0]), 0, -1)
+                            .contentType("application/octet-stream")
+                            .build()
+            );
+            log.info("Создана структура в MinIO: {} - {} /{}", user.getUuid(), user.getUsername(),storage.getUuid());
+
+        } catch (Exception e) {
+            log.error("Ошибка при создании структуры в MinIO: {}", e.getMessage());
+        }
+
         CreatedStorageEvent event_st = new CreatedStorageEvent(storage.getName(), username);
         kafka.send(CREATED_STORAGE_TOPIC, event_st);
-        log.info("Создано хранилище " + storage.getName() + "для пользователя " + username);
     }
 
     @Override
@@ -70,5 +106,53 @@ public class StorageServiceImpl implements StorageService{
         Storage storage = storageRepository.findByUserAndName(user, name).orElseThrow(() -> new NotFoundStorageException("Хранилище не найдено !"));
 
         return new CreateStorageDTO(storage.getUuid(), storage.getName(), storage.getUser().getUuid());
+    }
+
+    @Override
+    @Transactional
+    public CreateStorageDTO createStorage(UUID userId, String storageName){
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("Пользователь не найден !"));
+
+        Storage storage = new Storage();
+        storage.setName(storageName);
+        storage.setUser(user);
+        storageRepository.save(storage);
+
+        log.info("Пользователь {} создал хранилище '{}'", user.getUsername(), storageName);
+
+        try {
+            boolean bucketExists = minioClient.bucketExists(
+                    BucketExistsArgs.builder().bucket(bucketName).build()
+            );
+
+            if (!bucketExists) {
+                minioClient.makeBucket(
+                        io.minio.MakeBucketArgs.builder().bucket(bucketName).build()
+                );
+                log.info("Создан MinIO bucket '{}'", bucketName);
+            }
+
+            String prefixKey = user.getUuid() + "-" + user.getUsername() + "/" + storage.getUuid() + " " + storage.getName() + "/.keep";
+
+            minioClient.putObject(
+                    io.minio.PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(prefixKey)
+                            .stream(new java.io.ByteArrayInputStream(new byte[0]), 0, -1)
+                            .contentType("application/octet-stream")
+                            .build()
+            );
+
+            log.info("Создана структура в MinIO для '{}': {}", storageName, prefixKey);
+
+        } catch (Exception e) {
+            log.error("Ошибка при создании структуры MinIO для '{}': {}", storageName, e.getMessage());
+        }
+
+        CreatedStorageEvent event = new CreatedStorageEvent(storage.getName(), user.getUsername());
+        kafka.send(CREATED_STORAGE_TOPIC, event);
+
+        return new CreateStorageDTO(storage.getUuid(), storage.getName(), user.getUuid());
     }
 }
